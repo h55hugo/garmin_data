@@ -7,13 +7,11 @@ import numpy as np
 # =========================
 # CONFIG
 # =========================
-START_DATE = pd.to_datetime("2026-05-11")
-RACE_DATE = pd.to_datetime("2026-08-30")
-
-EXPECTED_SESSIONS_PER_WEEK = 6
+START_DATE = pd.to_datetime("2026-02-02")  # Monday
+RACE_DATE = pd.to_datetime("2026-08-30")   # Sunday
 
 st.set_page_config(layout="wide")
-st.title("🏁 Lausanne Triathlon 2026 Dashboard")
+st.title("🏁 Triathlon 2026 Dashboard")
 
 # =========================
 # LOAD DATA
@@ -22,7 +20,27 @@ df = pd.read_csv("csv/Lausanne_Triathlon_2026/main.csv")
 df["activity_date"] = pd.to_datetime(df["activity_date"])
 
 # =========================
-# SETTINGS
+# TRAINING WEEK (MONDAY-BASED)
+# =========================
+df = df[df["activity_date"] >= START_DATE].copy()
+
+df["training_week"] = (
+    (df["activity_date"] - START_DATE).dt.days // 7
+) + 1
+
+# =========================
+# FORMAT DURATION AS HH:MM
+# =========================
+def format_hhmm(hours):
+    if pd.isna(hours):
+        return "0h 00m"
+    total_minutes = int(round(hours * 60))
+    h = total_minutes // 60
+    m = total_minutes % 60
+    return f"{h}h {m:02d}m"
+
+# =========================
+# FIXED CYCLING MERGE (ONLY ONCE)
 # =========================
 st.sidebar.header("⚙️ Settings")
 
@@ -31,9 +49,7 @@ merge_cycling = st.sidebar.checkbox(
     value=True
 )
 
-# =========================
-# FIXED CYCLING MERGE (ONLY ONCE)
-# =========================
+
 df_raw = df.copy()
 
 if merge_cycling:
@@ -45,52 +61,21 @@ if merge_cycling:
 df = df_raw
 
 # =========================
-# FILTER PLAN
+# 🌍 GLOBAL COMPLETION
 # =========================
-plan_df = df[
-    (df["activity_date"] >= START_DATE) &
-    (df["activity_date"] <= RACE_DATE)
-].copy()
-
-plan_df["week"] = ((plan_df["activity_date"] - START_DATE).dt.days // 7) + 1
-
-total_weeks = ((RACE_DATE - START_DATE).days // 7) + 1
-
-# =========================
-# UTILS
-# =========================
-def format_hhmm(hours):
-    total_minutes = int(hours * 60)
-    h = total_minutes // 60
-    m = total_minutes % 60
-    return f"{h}h {m}m"
-
-# =========================
-# GLOBAL COMPLETION
-# =========================
-expected_total_sessions = total_weeks * EXPECTED_SESSIONS_PER_WEEK
-actual_sessions = plan_df["activityId"].nunique()
-
-completion_pct = min(actual_sessions / expected_total_sessions, 1.0) * 100
+st.header("🌍 Global Progress")
 
 today = pd.to_datetime("today").normalize()
 
-days_total = (RACE_DATE - START_DATE).days
-days_elapsed = (today - START_DATE).days
-days_left = (RACE_DATE - today).days
+total_days = (RACE_DATE - START_DATE).days
+elapsed_days = (today - START_DATE).days
 
-days_elapsed = max(days_elapsed, 0)
-days_left = max(days_left, 0)
+completion_pct = max(0, min(elapsed_days / total_days, 1)) * 100
 
 fig = go.Figure(go.Indicator(
     mode="gauge+number",
     value=completion_pct,
-    title={
-        "text": (
-            f"Overall Plan Completion<br>"
-            f"{START_DATE.date()} → {RACE_DATE.date()}"
-        )
-    },
+    title={"text": "Plan Completion (%)"},
     gauge={
         "axis": {"range": [0, 100]},
         "bar": {"color": "green"},
@@ -104,143 +89,175 @@ fig = go.Figure(go.Indicator(
 
 st.plotly_chart(fig, use_container_width=True)
 
-st.markdown(
-    f"""
-📅 **Plan duration:** {days_total} days  
-📆 **Elapsed:** {days_elapsed} days  
-⏳ **Days left:** {days_left} days  
-🏁 **Race day:** {RACE_DATE.date()}
-"""
-)
+st.markdown(f"""
+📅 Start: {START_DATE.date()}  
+🏁 Race: {RACE_DATE.date()}  
+📊 Days elapsed: {max(0, elapsed_days)} / {total_days}
+""")
 
 # =========================
-# WEEK SELECTION
+# 📅 WEEKLY OVERVIEW
 # =========================
 st.header("📅 Weekly Overview")
 
-selected_week = st.selectbox("Select week", list(range(1, total_weeks + 1)))
+max_week = int(df["training_week"].max())
 
-week_df = plan_df[plan_df["week"] == selected_week]
-prev_week_df = plan_df[plan_df["week"] == selected_week - 1]
+selected_week = st.selectbox(
+    "Select Training Week",
+    list(range(1, max_week + 1))
+)
 
+# =========================
+# COMPUTE WEEK DATES
+# =========================
 week_start = START_DATE + pd.Timedelta(days=(selected_week - 1) * 7)
 week_end = week_start + pd.Timedelta(days=6)
 
-st.markdown(f"📅 Week {selected_week}: {week_start.date()} → {week_end.date()}")
+st.markdown(
+    f"📅 **Week {selected_week}: {week_start.date()} → {week_end.date()}**"
+)
 
 # =========================
-# KPI
+# FILTER DATA
 # =========================
-col1, col2 = st.columns(2)
+week_df = df[df["training_week"] == selected_week]
+prev_week_df = df[df["training_week"] == selected_week - 1]
 
+# =========================
+# KPI CALCULATIONS
+# =========================
+# Sessions
 sessions = week_df["activityId"].nunique()
 prev_sessions = prev_week_df["activityId"].nunique()
 
-time_h = week_df["duration"].sum() / 3600
-prev_time_h = prev_week_df["duration"].sum() / 3600
-
-col1.metric("Sessions", sessions, f"{sessions - prev_sessions:+d}")
-col2.metric("Training Time", format_hhmm(time_h), f"{format_hhmm(time_h - prev_time_h)}")
+# Training time (hours)
+training_time = week_df["duration"].sum() / 3600
+prev_training_time = prev_week_df["duration"].sum() / 3600
 
 # =========================
-# TRAINING VOLUME
+# DELTA CALCULATIONS
+# =========================
+delta_sessions = sessions - prev_sessions
+delta_time = training_time - prev_training_time
+
+# percentage delta (safe)
+if prev_training_time > 0:
+    delta_pct = (delta_time / prev_training_time) * 100
+    delta_pct_str = f"{delta_pct:+.1f}%"
+else:
+    delta_pct_str = "n/a"
+
+# combined delta string
+if prev_training_time > 0:
+    delta_time_str = f"{format_hhmm(delta_time)} ({delta_pct_str})"
+else:
+    delta_time_str = "n/a"
+
+# =========================
+# DISPLAY KPIs SIDE BY SIDE
+# =========================
+col1, col2 = st.columns(2)
+
+with col1:
+    st.metric(
+        label="Training Sessions",
+        value=sessions,
+        delta=f"{delta_sessions:+d}"
+    )
+
+with col2:
+    st.metric(
+        label="Training Time",
+        value=format_hhmm(training_time),
+        delta=delta_time_str
+    )
+
+
+# =========================
+# 📊 TRAINING VOLUME (LEFT)
 # =========================
 col_left, col_right = st.columns(2)
+
 with col_left:
 
     st.subheader("📊 Training Volume")
 
-    metric = st.selectbox("Metric", ["duration", "distance_km"])
+    metric = st.selectbox(
+        "Metric",
+        ["Duration", "Distance"],
+        key="training_volume_metric"
+    )
 
     # -------------------------
-    # CURRENT WEEK
+    # AGGREGATION
     # -------------------------
-    chart_df = week_df.groupby("activityType").agg(
+    current = week_df.groupby("activityType").agg(
         duration=("duration", "sum"),
-        distance_km=("distance_km", "sum"),
-        sessions=("activityId", "nunique")
+        distance_km=("distance_km", "sum")
     ).reset_index()
 
-    # -------------------------
-    # PREVIOUS WEEK
-    # -------------------------
-    prev_df = prev_week_df.groupby("activityType").agg(
+    previous = prev_week_df.groupby("activityType").agg(
         duration_prev=("duration", "sum"),
-        distance_km_prev=("distance_km", "sum"),
-        sessions_prev=("activityId", "nunique")
+        distance_km_prev=("distance_km", "sum")
     ).reset_index()
 
-    # -------------------------
-    # MERGE
-    # -------------------------
-    chart_df = chart_df.merge(prev_df, on="activityType", how="left").fillna(0)
-
-    # -------------------------
-    # FORMAT HELPERS
-    # -------------------------
-    def format_hhmm(hours):
-        total_minutes = int(round(hours * 60))
-        h = total_minutes // 60
-        m = total_minutes % 60
-        return f"{h}h {m:02d}m"
-
-    def safe_pct(curr, prev):
-        if prev == 0:
-            return None
-        return ((curr - prev) / prev) * 100
+    # merge (keep all sports from current week)
+    chart_df = current.merge(previous, on="activityType", how="left").fillna(0)
 
     # -------------------------
     # METRIC SELECTION
     # -------------------------
-    if metric == "duration":
-
+    if metric == "Duration":
         chart_df["value"] = chart_df["duration"] / 3600
         chart_df["prev_value"] = chart_df["duration_prev"] / 3600
         y_label = "Training Time"
 
         chart_df["label"] = chart_df["value"].apply(format_hhmm)
 
-        chart_df["delta"] = chart_df["value"] - chart_df["prev_value"]
-        chart_df["delta_pct"] = chart_df.apply(
-            lambda r: safe_pct(r["value"], r["prev_value"]),
-            axis=1
-        )
-
-        chart_df["hover"] = chart_df.apply(
-            lambda r: (
-                f"Current: {format_hhmm(r['value'])}<br>"
-                f"Previous: {format_hhmm(r['prev_value'])}<br>"
-                f"Δ: {format_hhmm(abs(r['delta'])) if r['delta'] >= 0 else '-' + format_hhmm(abs(r['delta']))}<br>"
-                f"Δ%: {r['delta_pct']:+.1f}%<br>"
-                f"Sessions: {int(r['sessions'])}"
-            ),
-            axis=1
-        )
+        def format_value(x):
+            return format_hhmm(x)
 
     else:
-
         chart_df["value"] = chart_df["distance_km"]
         chart_df["prev_value"] = chart_df["distance_km_prev"]
         y_label = "Distance (km)"
 
-        chart_df["label"] = chart_df["value"].round(2).astype(str)
+        chart_df["label"] = chart_df["value"].round(1).astype(str)
 
-        chart_df["delta"] = chart_df["value"] - chart_df["prev_value"]
-        chart_df["delta_pct"] = chart_df.apply(
-            lambda r: safe_pct(r["value"], r["prev_value"]),
-            axis=1
+        def format_value(x):
+            return f"{x:.1f} km"
+
+    # -------------------------
+    # DELTAS
+    # -------------------------
+    chart_df["delta"] = chart_df["value"] - chart_df["prev_value"]
+
+    def safe_pct(curr, prev):
+        if prev == 0:
+            return None
+        return (curr - prev) / prev * 100
+
+    chart_df["delta_pct"] = chart_df.apply(
+        lambda r: safe_pct(r["value"], r["prev_value"]),
+        axis=1
+    )
+
+    # -------------------------
+    # TOOLTIP
+    # -------------------------
+    def build_tooltip(row):
+        delta_pct = row["delta_pct"]
+
+        pct_str = f"{delta_pct:+.1f}%" if delta_pct is not None else "n/a"
+
+        return (
+            f"Current: {format_value(row['value'])}<br>"
+            f"Previous: {format_value(row['prev_value'])}<br>"
+            f"Δ: {format_value(row['delta']) if row['delta'] >= 0 else '-' + format_value(abs(row['delta']))}<br>"
+            f"Δ%: {pct_str}"
         )
 
-        chart_df["hover"] = chart_df.apply(
-            lambda r: (
-                f"Current: {r['value']:.2f} km<br>"
-                f"Previous: {r['prev_value']:.2f} km<br>"
-                f"Δ: {r['delta']:+.2f} km<br>"
-                f"Δ%: {r['delta_pct']:+.1f}%<br>"
-                f"Sessions: {int(r['sessions'])}"
-            ),
-            axis=1
-        )
+    chart_df["hover"] = chart_df.apply(build_tooltip, axis=1)
 
     # -------------------------
     # SORT
@@ -250,25 +267,29 @@ with col_left:
     # -------------------------
     # PLOT
     # -------------------------
-    fig_bar = px.bar(
+    import plotly.express as px
+
+    fig = px.bar(
         chart_df,
         x="activityType",
         y="value",
         text="label",
         hover_data={"hover": True},
-        title=f"{y_label} by Sport (Current vs Previous Week)"
+        title=f"{y_label} by Sport"
     )
 
-    fig_bar.update_traces(
+    fig.update_traces(
         textposition="outside",
         cliponaxis=False,
         hovertemplate="%{customdata[0]}<extra></extra>"
     )
 
-    st.plotly_chart(fig_bar, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
+
+
 
 # =========================
-# ❤️ ZONE ANALYSIS (FIXED SAFE VERSION)
+# ❤️ ZONE ANALYSIS (RIGHT)
 # =========================
 with col_right:
 
@@ -276,17 +297,21 @@ with col_right:
 
     zone_mode = st.selectbox(
         "View",
-        ["Current vs Previous", "Zone Distribution per Sport"]
+        ["Current vs Previous", "Zone Distribution per Sport"],
+        key="zone_analysis_mode"
     )
 
     zone_cols = ["zone1", "zone2", "zone3", "zone4", "zone5"]
 
+    import plotly.express as px
+    import numpy as np
+
     # =========================
-    # MODE 1 — CURRENT VS PREVIOUS (WITH COLORS)
+    # MODE 1 — CURRENT VS PREVIOUS
     # =========================
     if zone_mode == "Current vs Previous":
 
-        def zone_percent(df_):
+        def compute_zone_pct(df_):
             z = df_[zone_cols].sum()
             total = z.sum()
 
@@ -296,55 +321,59 @@ with col_right:
                     "percent": [0]*5
                 })
 
+            pct = (z / total * 100).round(0)
+
             return pd.DataFrame({
                 "zone": zone_cols,
-                "percent": (z / total * 100).values
+                "percent": pct.values
             })
 
-        week_zone = zone_percent(week_df)
-        prev_zone = zone_percent(prev_week_df)
+        current_zone = compute_zone_pct(week_df)
+        prev_zone = compute_zone_pct(prev_week_df)
 
-        week_zone["week"] = "Current"
+        current_zone["week"] = "Current"
         prev_zone["week"] = "Previous"
 
-        zone_compare = pd.concat([prev_zone, week_zone])
+        zone_df = pd.concat([prev_zone, current_zone])
 
-        # -------------------------
-        # 🎨 COLOR MAP (Z1 → Z5 gradient)
-        # -------------------------
+        # label only if >= 10%
+        zone_df["label"] = zone_df["percent"].apply(
+            lambda x: f"{int(x)}%" if x >= 10 else ""
+        )
+
+        # consistent colors
         color_map = {
-            "zone1": "#ADD8E6",  # light blue
+            "zone1": "#ADD8E6",
             "zone2": "#6BAED6",
             "zone3": "#FDAE6B",
             "zone4": "#FB6A4A",
-            "zone5": "#FF0000"   # red
+            "zone5": "#FF0000"
         }
 
-        fig_zone = px.bar(
-            zone_compare,
+        fig = px.bar(
+            zone_df,
             x="week",
             y="percent",
             color="zone",
             color_discrete_map=color_map,
-            text=zone_compare["percent"].apply(
-                lambda x: f"{int(round(x))}%" if x >= 10 else ""
-            )
+            text="label"
         )
 
-        fig_zone.update_layout(barmode="stack")
+        fig.update_layout(barmode="stack")
 
-        fig_zone.update_traces(
+        fig.update_traces(
             textposition="inside",
             insidetextanchor="middle"
         )
 
-        st.plotly_chart(fig_zone, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
-# =========================================================
-# MODE 2 — ZONE DISTRIBUTION PER SPORT (FIXED)
-# =========================================================
+    # =========================
+    # MODE 2 — ZONE DISTRIBUTION PER SPORT
+    # =========================
     else:
 
+        # reshape data
         melted = week_df.melt(
             id_vars=["activityType"],
             value_vars=zone_cols,
@@ -352,41 +381,42 @@ with col_right:
             value_name="time"
         )
 
-        # 🚨 FIX: ensure numeric + no NaN issues
         melted["time"] = pd.to_numeric(melted["time"], errors="coerce").fillna(0)
 
-        # total per zone
+        # total time per zone
         zone_total = melted.groupby("zone")["time"].sum().reset_index()
-        zone_total = zone_total.rename(columns={"time": "zone_total"})
+        zone_total = zone_total.rename(columns={"time": "zone_time"})
 
-        total_time = zone_total["zone_total"].sum()
+        total_time = zone_total["zone_time"].sum()
+
+        # zone % of total training time
         zone_total["zone_pct"] = np.where(
             total_time > 0,
-            (zone_total["zone_total"] / total_time) * 100,
+            (zone_total["zone_time"] / total_time) * 100,
             0
         )
 
-        # per sport contribution
+        # contribution of each sport inside each zone
         zone_sport = melted.groupby(["zone", "activityType"])["time"].sum().reset_index()
 
         zone_sport = zone_sport.merge(zone_total, on="zone", how="left")
 
-        # 🚨 FIX: safe division (prevents KeyError + NaN issues)
+        # share within zone
         zone_sport["share"] = np.where(
-            zone_sport["zone_total"] > 0,
-            zone_sport["time"] / zone_sport["zone_total"],
+            zone_sport["zone_time"] > 0,
+            zone_sport["time"] / zone_sport["zone_time"],
             0
         )
 
+        # final value = contribution to total
         zone_sport["value"] = zone_sport["zone_pct"] * zone_sport["share"]
-        zone_sport["value"] = zone_sport["value"].fillna(0)
 
-        # labels
+        # labels for total zone %
         zone_labels = zone_total.copy()
-        zone_labels["label"] = zone_labels["zone_pct"].round(0).astype("Int64").astype(str) + "%"
+        zone_labels["label"] = zone_labels["zone_pct"].round(0).astype(int).astype(str) + "%"
 
         # plot
-        fig_zone = px.bar(
+        fig = px.bar(
             zone_sport,
             x="zone",
             y="value",
@@ -394,12 +424,13 @@ with col_right:
             title="Zone Distribution per Sport"
         )
 
-        fig_zone.update_layout(
+        fig.update_layout(
             barmode="stack",
             yaxis_title="% of Weekly Training"
         )
 
-        fig_zone.add_scatter(
+        # add total % labels on top
+        fig.add_scatter(
             x=zone_labels["zone"],
             y=zone_labels["zone_pct"],
             text=zone_labels["label"],
@@ -408,75 +439,163 @@ with col_right:
             showlegend=False
         )
 
-        st.plotly_chart(fig_zone, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
+
 
 # =========================
 # 🌍 GLOBAL OVERVIEW
 # =========================
-st.header("🌍 Global Overview (Weekly Trends)")
+st.header("🌍 Global Overview")
 
-overview_metric = st.selectbox(
-    "Metric",
-    ["duration", "distance_km"],
-    key="global_overview_metric"
-)
+import plotly.graph_objects as go
 
-# -------------------------
-# LIMIT WEEKS TO REAL DATA
-# -------------------------
-max_week = int(plan_df["week"].max())
+# =========================
+# CONTROLS (SIDE BY SIDE)
+# =========================
+col1, col2, col3 = st.columns(3)
 
-# -------------------------
-# COMPLETE GRID (WEEK × SPORT)
-# -------------------------
-weeks = pd.DataFrame({"week": range(1, max_week + 1)})
-sports = pd.DataFrame({"activityType": plan_df["activityType"].unique()})
+with col1:
+    metric = st.selectbox(
+        "Metric",
+        ["Duration", "Distance"],
+        key="global_metric"
+    )
 
-grid = weeks.merge(sports, how="cross")
+with col2:
+    freq = st.selectbox(
+        "Aggregation",
+        ["Weekly", "Monthly"],
+        key="global_freq"
+    )
 
-# -------------------------
+with col3:
+    view_mode = st.selectbox(
+        "View mode",
+        ["Normal", "Cumulative"],
+        key="global_view_mode"
+    )
+# =========================
+# PREP DATA
+# =========================
+df_global = df.copy()
+df_global["activity_date"] = pd.to_datetime(df_global["activity_date"])
+
+# =========================
+# PERIOD CREATION
+# =========================
+if freq == "Weekly":
+
+    # Monday-based training weeks aligned to START_DATE
+    df_global["period"] = START_DATE + pd.to_timedelta(
+        (df_global["training_week"] - 1) * 7,
+        unit="D"
+    )
+else:
+    df_global["period"] = df_global["activity_date"].dt.to_period("M").dt.to_timestamp()
+
+# =========================
 # AGGREGATION
-# -------------------------
-agg = plan_df.groupby(["week", "activityType"]).agg(
+# =========================
+agg = df_global.groupby(["period", "activityType"]).agg(
     duration=("duration", "sum"),
     distance_km=("distance_km", "sum")
 ).reset_index()
 
-agg = grid.merge(agg, on=["week", "activityType"], how="left").fillna(0)
-
-# -------------------------
-# METRIC
-# -------------------------
-if overview_metric == "duration":
+# =========================
+# METRIC SELECTION
+# =========================
+if metric == "Duration":
     agg["value"] = agg["duration"] / 3600
-    y_label = "Training Time"
 else:
     agg["value"] = agg["distance_km"]
-    y_label = "Distance (km)"
 
-# -------------------------
-# PREVIOUS WEEK (USED INTERNALLY ONLY IF NEEDED LATER)
-# -------------------------
-agg = agg.sort_values(["activityType", "week"])
+# =========================
+# COMPLETE GRID (NO MISSING SPORTS)
+# =========================
+all_periods = agg["period"].unique()
+all_sports = df["activityType"].unique()
+
+grid = pd.MultiIndex.from_product(
+    [all_periods, all_sports],
+    names=["period", "activityType"]
+).to_frame(index=False)
+
+agg = grid.merge(agg, on=["period", "activityType"], how="left").fillna(0)
+
+# =========================
+# SORT (CRITICAL FOR CUMULATIVE)
+# =========================
+agg = agg.sort_values(["activityType", "period"])
+
+# =========================
+# CUMULATIVE MODE
+# =========================
+if view_mode == "Cumulative":
+    agg["value"] = agg.groupby("activityType")["value"].cumsum()
+
+# =========================
+# TOOLTIP HELPERS
+# =========================
+def format_value(x):
+    if metric == "Duration":
+        return format_hhmm(x)
+    return f"{x:.1f} km"
+
+# previous value (ONLY meaningful in Normal mode)
 agg["prev_value"] = agg.groupby("activityType")["value"].shift(1).fillna(0)
 
-# -------------------------
-# PLOT (NO TOOLTIP)
-# -------------------------
-fig = px.line(
-    agg,
-    x="week",
-    y="value",
-    color="activityType",
-    markers=True,
-    labels={
-        "week": "Week",
-        "value": y_label,
-        "activityType": "Sport"
-    },
-    title=f"Weekly {y_label} Evolution by Sport"
+def safe_pct(curr, prev):
+    if prev == 0:
+        return None
+    return (curr - prev) / prev * 100
+
+def build_tooltip(row):
+    delta = row["value"] - row["prev_value"]
+    pct = safe_pct(row["value"], row["prev_value"])
+
+    pct_str = f"{pct:+.1f}%" if pct is not None else "n/a"
+
+    return (
+        f"Current: {format_value(row['value'])}<br>"
+        f"Previous: {format_value(row['prev_value'])}<br>"
+        f"Δ: {format_value(delta) if delta >= 0 else '-' + format_value(abs(delta))}<br>"
+        f"Δ%: {pct_str}"
+    )
+
+agg["hover"] = agg.apply(build_tooltip, axis=1)
+
+# =========================
+# PLOT
+# =========================
+fig = go.Figure()
+
+for sport in agg["activityType"].unique():
+
+    sport_df = agg[agg["activityType"] == sport]
+
+    fig.add_trace(
+        go.Scatter(
+            x=sport_df["period"],
+            y=sport_df["value"],
+            mode="lines+markers",
+            name=sport,
+            customdata=sport_df["hover"],
+            hovertemplate="%{customdata}<extra></extra>"
+        )
+    )
+
+# =========================
+# LAYOUT
+# =========================
+fig.update_layout(
+    title=f"{metric} per {freq} by Sport ({view_mode})",
+    xaxis_title=freq,
+    yaxis_title=metric,
+    hovermode="closest"
 )
 
-fig.update_traces(hoverinfo="skip")
+fig.update_xaxes(
+    tickformat="%d %b"
+)
 
 st.plotly_chart(fig, use_container_width=True)
