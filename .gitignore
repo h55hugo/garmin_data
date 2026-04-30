@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# VS Code
+.vscode/
+
+# Power BI
+*.pbix.autosave
+*.tmp
+
+# Data files (optional – depends on your use case)
+*.csv
+*.db
+
+# Excel data
+excel_files/
+backup/
+
+# config file
+src/config.py
+
+token.txt

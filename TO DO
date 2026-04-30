@@ -1,0 +1,8 @@
+When there is no activity for a week we just have a blank sapce: Format it to display "No activity"
+Same for the percentage compariosn with last week
+
+NO difference in the sportTypeId column between indoor cycling and outdorcycling
+
+
+Understand why sometimes moderateIntensityMinutes is NULL
+
