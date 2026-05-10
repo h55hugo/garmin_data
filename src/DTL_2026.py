@@ -7,11 +7,23 @@ import numpy as np
 # =========================
 # CONFIG
 # =========================
-START_DATE = pd.to_datetime("2026-02-02")  # Monday
+START_DATE = pd.to_datetime("2026-05-11")  # Monday
+#START_DATE = pd.to_datetime("2025-12-29")  # Monday
 RACE_DATE = pd.to_datetime("2026-08-30")   # Sunday
 
 st.set_page_config(layout="wide")
-st.title("🏁 Triathlon 2026 Dashboard")
+st.title("🏁 Triathlon olympique de Lausanne, Août 2026")
+
+today = pd.to_datetime("today").normalize()
+
+total_days = (RACE_DATE - START_DATE).days
+elapsed_days = (today - START_DATE).days
+
+st.markdown(f"""
+📅 Start: {START_DATE.date()}  
+🏁 Race: {RACE_DATE.date()}  
+📊 Days elapsed: {max(0, elapsed_days)} / {total_days}
+""")
 
 # =========================
 # LOAD DATA
@@ -65,17 +77,16 @@ df = df_raw
 # =========================
 st.header("🌍 Global Progress")
 
-today = pd.to_datetime("today").normalize()
 
-total_days = (RACE_DATE - START_DATE).days
-elapsed_days = (today - START_DATE).days
 
 completion_pct = max(0, min(elapsed_days / total_days, 1)) * 100
 
 fig = go.Figure(go.Indicator(
     mode="gauge+number",
     value=completion_pct,
-    title={"text": "Plan Completion (%)"},
+    number={"suffix": "%"}, 
+    title={"text": "Preparation Advancement",
+           "font": {"size": 36}},
     gauge={
         "axis": {"range": [0, 100]},
         "bar": {"color": "green"},
@@ -89,11 +100,6 @@ fig = go.Figure(go.Indicator(
 
 st.plotly_chart(fig, use_container_width=True)
 
-st.markdown(f"""
-📅 Start: {START_DATE.date()}  
-🏁 Race: {RACE_DATE.date()}  
-📊 Days elapsed: {max(0, elapsed_days)} / {total_days}
-""")
 
 # =========================
 # 📅 WEEKLY OVERVIEW
