@@ -76,7 +76,7 @@ if __name__ == "__main__":
     df = export_dashboard_csv(
         db_path="./db/garmin.db",
         start_date="2026-05-11",
-        end_date="2026-08-30"
+        end_date="2026-08-31"
     )
 
     print(f"Rows exported: {len(df)}")
