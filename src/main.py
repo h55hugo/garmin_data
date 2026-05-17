@@ -1,4 +1,5 @@
 from process_data import fetch_data, process_data, insert_activities
+from strength import strength_data
 import sqlite3
 
 
@@ -33,11 +34,30 @@ def main():
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM activities")
     count_after = cursor.fetchone()[0]
-    conn.close()
+    
 
     # print the number of activities added
     added = count_after - count_before
     print(f"Number of new activities added: {added}")
+
+    # for each strength activity, fetch and insert strength data
+    strength_activities = activities[
+        activities["activityType"] == "strength_training"
+    ]
+
+    for activity_id in strength_activities["activityId"]:
+
+        cursor.execute(
+            "SELECT COUNT(*) FROM strength WHERE activity_id = ?",
+            (activity_id,)
+        )
+
+        if cursor.fetchone()[0] == 0:
+            strength_data(activity_id)
+        else:
+            print(f"Skipping {activity_id} (already in DB)")
+    
+    conn.close()
 
 
 if __name__ == "__main__":
