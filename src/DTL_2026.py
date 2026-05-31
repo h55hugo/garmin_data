@@ -61,6 +61,11 @@ merge_cycling = st.sidebar.checkbox(
     value=True
 )
 
+only_triathlon = st.sidebar.checkbox(
+    "Only Triathlon Sports (Swim, Bike, Run)",
+    value=True
+)
+
 
 df_raw = df.copy()
 
@@ -69,6 +74,9 @@ if merge_cycling:
         "indoor_cycling": "cycling",
         "road_biking": "cycling"
     })
+
+if only_triathlon:
+    df_raw = df_raw[df_raw["activityType"].isin(["lap_swimming", "cycling", "running"])]
 
 df = df_raw
 
